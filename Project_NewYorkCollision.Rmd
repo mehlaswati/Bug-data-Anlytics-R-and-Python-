@@ -1,0 +1,1068 @@
+---
+title: "Homework vi"
+author: "Sheshans Yadav and FNU Swati"
+date: "10/11/2018"
+output: pdf_document
+theme: cerulean
+df_print: united
+toc: yes
+toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message = FALSE, rows.print=15)
+```
+
+## Loading Libraries
+```{r loading libraries}
+if(!require(tidyverse)){
+    install.packages("tidyverse")
+    library(tidyverse)
+}
+if(!require(knitr)){
+    install.packages("knitr")
+    library(knitr)
+}
+if(!require(kableExtra)){
+    install.packages("kableExtra")
+    library(kableExtra)
+}
+if(!require(data.table)){
+    install.packages("data.table")
+    library(data.table)
+}
+if(!require(lubridate)){
+    install.packages("lubridate")
+    library(lubridate)
+}
+if(!require(dplyr)){
+    install.packages("dplyr")
+    library(dplyr)
+}
+if(!require(ggplot2)){
+    install.packages("ggplot2")
+    library(ggplot2)
+}
+library(stringr)
+if(!require(stringr)){
+    install.packages("stringr")
+    library(stringr)
+}
+if(!require(DT)){
+    install.packages("DT")
+    library(DT)
+}
+if(!require(leaflet)){
+    install.packages('leaflet')
+    library(leaflet)
+}
+if(!require(grid)){
+    install.packages('grid')
+    library(grid)
+}
+library(gridExtra)
+
+fillColor = "#FFA07A"
+fillColor2 = "#F1C40F"
+```
+
+## Loading data
+```{r loading data}
+nyc311 = fread("/Users/shesh/Downloads/311_Service_Requests_from_2010_to_Present.csv", header = TRUE)
+names(nyc311)<-names(nyc311) %>% stringr::str_replace_all("\\s", ".")
+nyc311_1 <- nyc311
+NYC_Crimes = fread("/Users/shesh/Downloads/NYPD_Complaint_Data_Historic.csv", header = TRUE)
+names(NYC_Crimes)<-names(NYC_Crimes) %>% stringr::str_replace_all("\\s", ".")
+NYC_Crimes_1 <- NYC_Crimes
+```
+
+## Cleaning the data>
+
+We noticed that the values of Cross_Street1 and Intersection_Street1 are mutually exclusive
+Similar is the case for Cross_Stree2 and Intersection_Street2
+We decided to unite those into one column as below
+```{r}
+nyc311 <- nyc311_1
+# nyc311 <- nyc311 %>% sample_n(100e3)
+nyc311 <- unite(nyc311,Cross_Street1/Intersection_Street1,Cross.Street.1,Intersection.Street.1,sep = "")
+nyc311 <- unite(nyc311,Cross_Street2/Intersection_Street2,Cross.Street.2,Intersection.Street.2,sep = "")
+nyc311 <- na.omit(nyc311, cols = "Complaint.Type")
+nyc311 <- na.omit(nyc311, cols = "Descriptor")
+nyc311 <- na.omit(nyc311, cols = "Borough")
+nyc311 <- nyc311[- grep("Unspecified", nyc311$Borough),]
+nyc311 <- nyc311[- grep(" ", nyc311$Borough),]
+nyc311 <- (data.frame(nyc311[nyc311$Created.Date != "" & nyc311$Created.Date != " " & nyc311$Created.Date != "N/A"  & nyc311$Created.Date != "Unspecified" & nyc311$Created.Date != "NA" ,]))
+
+nyc311.Created.Date.Time <- data.frame(nyc311$Created.Date)
+colnames(nyc311.Created.Date.Time) <- c("Created.Date")
+
+nyc311 <- subset(nyc311, select=-c(Agency.Name,Incident.Address,Landmark,School.Number,School.Not.Found,School.Code,School.Address,School.Phone.Number,Bridge.Highway.Segment,Park.Borough,Created.Date,Community.Board))
+```
+
+```{r}
+nyc311.Created.Date.Time <- strptime(nyc311.Created.Date.Time$Created.Date,format="%m/%d/%Y %I:%M:%S %p")
+nyc311.Created.Date.Time <- data.frame(nyc311.Created.Date.Time)
+colnames(nyc311.Created.Date.Time ) <- c("Created.Date")
+
+nyc311.Created.Date.Time <- separate(nyc311.Created.Date.Time,Created.Date,c('Created.Date','Created.Time'),sep = " ")
+
+nyc311.Created.Date.Time <- separate(nyc311.Created.Date.Time,Created.Date,c('Created.Year','Created.Month','Created.Day'),sep = "-")
+nyc311.Created.Date.Time <- separate(nyc311.Created.Date.Time,Created.Time,c('Created.Hour','Ignore1','Ignore2'))
+nyc311.Created.Date.Time <- select(nyc311.Created.Date.Time,Created.Year,Created.Month,Created.Day,Created.Hour)
+nyc311<-cbind(nyc311,nyc311.Created.Date.Time)
+nyc311.Created.Date.Time <- NULL
+```
+
+
+
+```{r}
+colnames(NYC_Crimes)[colnames(NYC_Crimes)=="CMPLNT_FR_DT"] <- "COMPLAINT.FROM.DATE"
+colnames(NYC_Crimes)[colnames(NYC_Crimes)=="CMPLNT_FR_TM"] <- "COMPLAINT.FROM.TIME"
+colnames(NYC_Crimes)[colnames(NYC_Crimes)=="CMPLNT_TO_DT"] <- "COMPLAINT.TO.DATE"
+colnames(NYC_Crimes)[colnames(NYC_Crimes)=="CMPLNT_TO_TM"] <- "COMPLAINT.TO.TIME"
+colnames(NYC_Crimes)[colnames(NYC_Crimes)=="BORO_NM"] <- "Borough"
+
+NYC_Crimes <- subset(NYC_Crimes, select=-c(HADEVELOPT,Lat_Lon,X_COORD_CD,Y_COORD_CD))
+NYC_Crimes <- na.omit(NYC_Crimes,cols = "Borough")
+```
+
+
+```{r complainttypes}
+
+nyc311 %>% group_by(Borough, Complaint.Type) %>%
+  filter(!is.na(Borough)) %>%
+  summarize(num_call = n()) %>%
+  ungroup() %>%
+  arrange(desc(num_call)) %>%
+  head(25) %>%
+  ggplot(aes(y=num_call, x=Borough, fill = Complaint.Type, color = Complaint.Type))  +
+  geom_histogram(stat="identity",position = 'dodge') + ggtitle("Count of Top Most complaints from Top Most agencies") + xlab("Top 6 Agencies") + ylab("Number of Complaints Type")+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+dat<- nyc311
+p <- (data.frame(dat$Status[dat$Status != "" & dat$Status!= " " & dat$Status != "N/A" & dat$Status != "Unknown" ]))
+a <- as.data.frame(table(p))
+newdata <- head(a[order(-a$Freq),],5 )
+
+
+
+
+
+p1 <- (data.frame(dat$Borough[dat$Status == toString(newdata[1, "p"])]))
+a1 <- as.data.frame(table(p1))
+newdata1 <- head(a1[order(-a1$Freq),],5 )
+titlestr = paste("Number of service requests Closed per borough")
+p1<-ggplot(data=newdata1, aes(x=reorder(newdata1$p1, -newdata1$Freq), y=newdata1$Freq)) +
+  geom_bar(stat="identity",color='steelblue',fill = 'steelblue') +
+  xlab(toString(titlestr)) +  
+  ylab("Service Requests")
+p1
+
+p3 <- (data.frame(dat$Borough[dat$Status == toString(newdata[2, "p"])]))
+a1 <- as.data.frame(table(p3))
+newdata3 <- head(a1[order(-a1$Freq),],5 )
+titlestr = paste("Number of service requests still open per borough")
+p3<-ggplot(data=newdata3, aes(x=reorder(newdata3$p3, -newdata3$Freq), y=newdata3$Freq)) +
+  geom_bar(stat="identity",color='green',fill = 'green') +
+  xlab(toString(titlestr)) +  
+  ylab("Service Requests")
+p3
+
+##We wanted to see, what kind of complaints are their in Bronx and Queens, 
+p2 <- (data.frame(dat$Borough[dat$Status == toString(newdata[3, "p"])]))
+a1 <- as.data.frame(table(p2))
+newdata2 <- head(a1[order(-a1$Freq),],5 )
+titlestr = paste("Number of service requests still Pending per borough")
+p2<-ggplot(data=newdata2, aes(x=reorder(newdata2$p2, -newdata2$Freq), y=newdata2$Freq)) +
+  geom_bar(stat="identity",color='orange',fill = 'orange') +
+  xlab(toString(titlestr)) +  
+  ylab("Service Requests")
+p2
+
+
+locations <- (data.frame(NYC311SampleAll$Location.Type[NYC311SampleAll$Location.Type != "" & NYC311SampleAll$Location.Type != " " & NYC311SampleAll$Location.Type != "N/A"  & NYC311SampleAll$Location.Type != "Unspecified" ]))
+colnames(locations) <- "Location"
+a <- as.data.frame(table(locations))
+newdata <- head(a[order(-a$Freq),],5 )
+
+locationSR <- NYC311SampleAll[ NYC311SampleAll$Status != "" & NYC311SampleAll$Status != " " & NYC311SampleAll$Status != "N/A"  & NYC311SampleAll$Status != "Unspecified" & ((NYC311SampleAll$Location.Type == toString(newdata[1,1])) | (NYC311SampleAll$Location.Type == toString(newdata[2,1])) | (NYC311SampleAll$Location.Type == toString(newdata[3,1])) | (NYC311SampleAll$Location.Type == toString(newdata[4,1])) | (NYC311SampleAll$Location.Type == toString(newdata[5,1]))),]
+
+locationSR <- select(locationSR,"Location.Type","Status")
+bar_plt <- ggplot(locationSR, aes(x = Location.Type, fill = Status))
+bar_plt <- bar_plt + geom_bar() +
+  xlab("Top 5 Location Types with highest service requests") +
+  ylab("Service Requests") +theme(axis.text.x=element_text(angle=45),legend.text = element_text(size=3),legend.position = "top")+ ggtitle("             Types of Complaint for \"DOT\" Agency Type")
+
+
+grid.arrange(p3, p1,p2,bar_plt,ncol=2)
+
+
+
+
+
+
+
+```
+
+```{r}
+# df1 <- data.frame(ClosedSR)
+# df2 <- data.frame(OpenSR)
+grid.arrange(OpenSR,ncol=1)
+```
+```{r}
+
+nyc311 <- (data.frame(nyc311[nyc311$Unique.Key != "" & nyc311$Unique.Key != " " & nyc311$Unique.Key != "N/A"  & nyc311$Unique.Key != "Unspecified" & nyc311$Unique.Key != "NA" & nyc311$Created.Year != "NA" ,]))
+
+temp = data.frame(nyc311[nyc311$Agency == "HPD",])
+DOHMH.Agency = data.frame(nyc311[nyc311$Agency == "DOHMH",])
+temp1 = data.frame(nyc311[nyc311$Agency != "HPD" & nyc311$Agency != "DOHMH.Agency",])
+nypd = data.frame(nyc311[nyc311$Agency == "NYPD",])
+
+df <- nypd %>%
+   
+  group_by(Created.Year, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Year, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- nypd %>%
+   
+  group_by(Created.Hour, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Hour, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- nypd %>%
+   
+  group_by(Created.Month, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Month, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- DOHMH.Agency %>%
+   
+  group_by(Created.Year, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Year, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- DOHMH.Agency %>%
+   
+  group_by(Created.Hour, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Hour, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- DOHMH.Agency %>%
+   
+  group_by(Created.Month, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Month, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+
+df <- temp %>%
+   
+  group_by(Created.Year, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Year, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- temp %>%
+   
+  group_by(Created.Hour, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Hour, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- temp %>%
+   
+  group_by(Created.Month, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Month, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+df <- temp1 %>%
+   
+  group_by(Created.Year, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Year, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- temp1 %>%
+   
+  group_by(Created.Hour, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Hour, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- temp1 %>%
+   
+  group_by(Created.Month, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Month, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- nyc311 %>%
+   
+  group_by(Created.Year, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Year, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- nyc311 %>%
+   
+  group_by(Created.Hour, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Hour, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+
+df <- nyc311 %>%
+   
+  group_by(Created.Month, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Month, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+df <- nyc311 %>%
+   
+  group_by(Created.Day, Borough) %>%
+  summarise(counts = n())
+ggplot(df, aes(x = Created.Day, y = counts)) +
+  geom_bar(
+    aes(color = Borough, fill = Borough),
+    stat = "identity", position = position_stack()
+    ) 
+
+```
+
+
+## Merging Tables 
+```{r}
+nyc311_NYPD <- NULL
+NYC_Crimes_NYPD <- NULL
+nyc311_NYPD <- (data.frame(nyc311[nyc311$Agency == "NYPD"]))
+NYC_Crimes_NYPD <- NYC_Crimes
+NYC_Crimes_NYPD <- NYC_Crimes_NYPD[NYC_Crimes_NYPD$Latitude != "NA" & NYC_Crimes_NYPD$Longitude != "NA" & !is.na(NYC_Crimes_NYPD$Latitude) & !is.na(NYC_Crimes_NYPD$Longitude) ]
+NYC_Crimes_NYPD <- (data.frame(NYC_Crimes_NYPD[NYC_Crimes_NYPD$JURIS_DESC == "N.Y. POLICE DEPT"]))
+```
+
+Joining on 3 attributes
+Borough, Latitude and Longitude
+This helps to get the locations where crimes happened.
+Using this we can explore the agency type NYPD of nyc311 data and we might be able to more insights out of this.
+```{r}
+nyc311_NYPD$Latitude <-formatC(nyc311_NYPD$Latitude, digits = 4, format = "f")
+nyc311_NYPD$Longitude <-formatC(nyc311_NYPD$Longitude, digits = 4, format = "f")
+NYC_Crimes_NYPD$Latitude <-formatC(NYC_Crimes_NYPD$Latitude, digits = 4, format = "f")
+NYC_Crimes_NYPD$Longitude <-formatC(NYC_Crimes_NYPD$Longitude, digits = 4, format = "f")
+Merged_Table <- left_join(nyc311_NYPD, NYC_Crimes_NYPD, by = c("Borough" = "Borough", "Latitude" = "Latitude", "Longitude" = "Longitude"))
+```
+
+##Describing each column of the data (Data Dictionary)
+```{r,echo=FALSE}
+dat_dict <- data.frame("Column Name" = character(), "Description" = character(), "Expected Values" = character(), "Notes" = character())
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Unique Key", "Description"="Unique identifier of a Service Request", "Expected Values"="Integer","Notes"="This is NOT the Service Request (SR) # provided to the initiating customer.  SR #s are not available in this data set.  "))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Created Date",
+                                     "Description"="Creation date of the service request",
+                                     "Expected Values"="Date in format MM/DD/YY",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Created Hour",
+                                     "Description"="Creation Hour of the service request",
+                                     "Expected Values"="Hour in 24 hour format",
+                                     "Notes"=""
+                                     ))
+
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Closed Date",
+                                     "Description"="Closing date of the service request",
+                                     "Expected Values"="Date in format MM/DD/YY HH:MM:SS AM/PM",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Agency",
+                                     "Description"="Acronym of responding City Government Agency",
+                                     "Expected Values"="String",
+                                     "Notes"="64"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Complaint Type",
+                                     "Description"="This is the fist level of identifying the topic of the incident or condition. ",
+                                     "Expected Values"="String",
+                                     "Notes"="245 distinct. Lowest  = adopt a basket, agency issues, air quality, animal abuse.  Highest - water system, window guard.All possible compaaint type in the link"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Descriptor",
+                                     "Description"="This is  associated to the Complaint Type, and provides further detail on the incident or condition. Descriptor values are dependent on the Complaint Type, and are not always required in SR. ",
+                                     "Expected Values"="String",
+                                     "Notes"="Lowest : 10 little basets"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Location Type",
+                                     "Description"="Describes the type of location used of the address information ",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Incident Zip",
+                                     "Description"="Incident location's zip code",
+                                     "Expected Values"=" 5 digit Integer",
+                                     "Notes"="highest is brooklyn : 11226"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Street Name",
+                                     "Description"="Street name of incident address provided by the submitter",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Cross Street 1",
+                                     "Description"="First Cross street based on the geo validated incident location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Cross Street 2",
+                                     "Description"="Second Cross Street based on the geo validated incident location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Intersection Street 1",
+                                     "Description"="First intersecting street based on geo validated incident location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Intersection Street 2",
+                                     "Description"="Second intersecting street based on geo validated incident location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Address Type",
+                                     "Description"="Type of incident location information available.",
+                                     "Expected Values"="String Values: Intersection; LatLong; Placename; Address; Block face",
+                                     "Notes"="6 distinct values , Address; Block face; Intersection; LatLong; Placename"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="City",
+                                     "Description"="City of the incident location provided by geovalidation.",
+                                     "Expected Values"="String",
+                                     "Notes"="Brooklyn highest"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Facility Type",
+                                     "Description"="If available, this field describes the type of city facility associated to the SR",
+                                     "Expected Values"="String",
+                                     "Notes"="6 distinct values.1              Precinct
+12                  N/A
+22                     
+137         DSNY Garage
+439              School
+5527008 School District"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Status",
+                                     "Description"="Status of SR submitted ",
+                                     "Expected Values"="String",
+                                     "Notes"="22 distinct values like, closed, open, pending, Assigned, Email sent, started, Unassigned, to be routed, closed-testing , closed - In person, Closed - by phone...etc."
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Due Date",
+                                     "Description"="Date when responding agency is expected to update the SR.  This is based on the Complaint Type and internal Service Level Agreements (SLAs).",
+                                     "Expected Values"="Date in format MM/DD/YY HH:MM:SS AM/PM",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Resolution Action Updated Date",
+                                     "Description"="Date when responding agency last updated the SR.",
+                                     "Expected Values"="Date in format MM/DD/YY HH:MM:SS AM/PM",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Community Board",
+                                     "Description"="Provided by geovalidation.",
+                                     "Expected Values"="String",
+                                     "Notes"="Community Boards are the foundation of democratic, community-based planning in New York City."
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Borough",
+                                     "Description"="Provided by the submitter and confirmed by geovalidation.",
+                                     "Expected Values"="String. New York City encompasses five county-level administrative divisions called boroughs: Manhattan, Brooklyn, Queens, The Bronx, and Staten Island.",
+                                     "Notes"="String. New York City encompasses five county-level administrative divisions called boroughs: Manhattan, Brooklyn, Queens, The Bronx, and Staten Island."
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="X Coordinate (State Plane)",
+                                     "Description"="X coordinate of the incident location. ",
+                                     "Expected Values"="Integer",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Y Coordinate (State Plane)",
+                                     "Description"="Y coordinate of the incident location. ",
+                                     "Expected Values"="Integer",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Park Facility Name",
+                                     "Description"="Name of the Park Facility of the incident location is Parks Dept Facility",
+                                     "Expected Values"="String",
+                                     "Notes"="if it is a park or not like .  Unspecified                 :9067682  
+ Central Park                :   2215  
+ Riverside Park              :    991  
+ Prospect Park               :    763  
+ Rockaway Beach Boardwalk    :    651  
+ Flushing Meadows Corona Park:    600  
+ (Other)                     :  52035  . If not then unspecified."
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School Name",
+                                     "Description"="Name of the School, if the incident took place in Dept. of Education.",
+                                     "Expected Values"="String",
+                                     "Notes"="Sometimes Park values appear.Possible values: 101 Street Soccer Field                        107th Street Pier                              115th Street Playground                        146 St Playground"
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School Region",
+                                     "Description"="Region in which the school is located if the incident occurred in school",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School City",
+                                     "Description"="City of the facility of the incident",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School State",
+                                     "Description"="State of the facility of the incident",
+                                     "Expected Values"="possible values :  NY       :   57255  
+ Unspecified       :   9067682",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School Zip",
+                                     "Description"="Zipcode of the School of the incident.",
+                                     "Expected Values"="5 digit Integer",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="School or Citywide Complaint",
+                                     "Description"="This field is for a school or citywide issue if the incident is realted to a school.",
+                                     "Expected Values"="Y; N; BLANK",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Vehicle Type",
+                                     "Description"="Specifies the type of TLC vehicle, if the incident occurred in taxi",
+                                     "Expected Values"="Car Service; Commuter Van; Green Taxi",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Taxi Company Borough",
+                                     "Description"="Displays the borough of the taxi company.",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Taxi Pick Up Location",
+                                     "Description"="Shows the taxi pickup location as taxi, if the inciddent took place in taxi",
+                                     "Expected Values"="Grand Central Station; Intersection; JKF Airport; La Guardia Airport; New York-Penn Station; Other; Port Authority Bus Terminal",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Bridge Highway Name",
+                                     "Description"="Name of the Bridge Highway, when the incient took place on bridge Highway",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Bridge Highway Direction",
+                                     "Description"="Direction of bridge/highway of incident's location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Road Ramp",
+                                     "Description"="Tells if the incident took place on road or the road ramp",
+                                     "Expected Values"="Roadway; Ramp",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Garage Lot Name",
+                                     "Description"="Shows garage, in which the meter is located",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Ferry Direction",
+                                     "Description"="Indicates the direction of the Ferry, used when the incident location is within a Ferry",
+                                     "Expected Values"="Manhattan Bound; Staten Island Bound",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Ferry Terminal Name",
+                                     "Description"="Ferry Terminal where the incident took place, used when the incident took place at ferry location",
+                                     "Expected Values"="String",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Latitude",
+                                     "Description"="Latitude of the incident location",
+                                     "Expected Values"="Numeric",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Longitude",
+                                     "Description"="Longitude of the incident location",
+                                     "Expected Values"="Numeric",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="Location",
+                                     "Description"="Latitude & Longitude of the incident location",
+                                     "Expected Values"="Numeric",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="CMPLNT_NUM",
+                                     "Description"="Randomly generated ID for each complaint ",
+                                     "Expected Values"="Numeric",
+                                     "Notes"=""
+                                     ))
+
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="COMPLAINT.FROM.DATE",
+                                     "Description"="Exact date of occurrence for the reported event (or starting date of occurrence, if COMPLAINT.TO.DATE exists)",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="COMPLAINT.FROM.TIME",
+                                     "Description"="Exact time of occurrence for the reported event (or starting time of occurrence, if CMPLNT_TO_TM exists)",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="COMPLAINT.TO.DATE",
+                                     "Description"="Ending date of occurrence for the reported event, if exact time of occurrence is unknown",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="COMPLAINT.TO.TIME",
+                                     "Description"="Ending time of occurrence for the reported event, if exact time of occurrence is unknown",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="RPT_DT",
+                                     "Description"="Date event was reported to police ",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="KY_CD",
+                                     "Description"="Three digit offense classification code",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="OFNS_DESC",
+                                     "Description"="Description of offense corresponding with key code",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="PD_CD",
+                                     "Description"="Three digit internal classification code (more granular than Key Code)",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="PD_DESC",
+                                     "Description"="Description of internal classification corresponding with PD code (more granular than Offense Description)",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="CRM_ATPT_CPTD_CD",
+                                     "Description"="Indicator of whether crime was successfully completed or attempted, but failed or was interrupted prematurely",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="LAW_CAT_CD",
+                                     "Description"="Level of offense: felony, misdemeanor, violation ",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="JURIS_DESC",
+                                     "Description"="Jurisdiction responsible for incident. Either internal, like Police, Transit, and Housing; or external, like Correction, Port Authority, etc.",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="ADDR_PCT_CD",
+                                     "Description"="The precinct in which the incident occurred",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="LOC_OF_OCCUR_DESC",
+                                     "Description"="Specific location of occurrence in or around the premises; inside, opposite of, front of, rear of",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="PREM_TYP_DESC",
+                                     "Description"="Specific description of premises; grocery store, residence, street, etc.",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+dat_dict<-rbind(dat_dict, data.frame("Column Name"="PARKS_NM",
+                                     "Description"="Name of NYC park, playground or greenspace of occurrence, if applicable (state parks are not included)",
+                                     "Expected Values"="",
+                                     "Notes"=""
+                                     ))
+
+knitr::kable(
+      dat_dict,
+      caption = "Data Dictionary",
+      format = "latex",
+      longtable = T
+) %>%
+  kable_styling(full_width = F,latex_options = c("repeat_header")) %>%
+  column_spec(1, width = "6.5em", bold = T, border_left = T) %>%
+  column_spec(2, width = "11em") %>%
+  column_spec(3, width = "7.5em") %>%
+  column_spec(4, width = "14em", border_right = T)
+
+
+```
+
+Saving First 10,000 rows of the Merged Data
+This sample data set is submitted with Rmd file
+```{r}
+fwrite(head(Merged_Table,10000),"Data_extract.csv")
+```
+
+
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r install map, echo=FALSE}
+install.packages('leaflet')
+```
+
+
+
+```{r install, echo=FALSE}
+join_nyc_crimes<-fread("/Users/varunchaudhary/Downloads/v/Data_extract.csv")
+```
+
+```{r distrmap}
+library(leaflet)
+center_lon = median(NYC311$Longitude,na.rm = TRUE)
+center_lat = median(NYC311$Latitude,na.rm = TRUE)
+
+NYC311SampleAll = NYC311 %>% sample_n(10000)%>%
+  filter(!is.na(Latitude) ) %>%
+  filter(!is.na(Longitude))
+
+
+leaflet() %>% addProviderTiles("Esri.NatGeoWorldMap") %>%
+addCircles(data = NYC311SampleAll,lng = ~Longitude, lat = ~Latitude,
+           color = ~c("red"))  %>%
+  # controls
+  setView(lng=center_lon, lat=center_lat,zoom = 12)
+```
+
+
+```{r }
+ NYC311SampleAll %>% leaflet() %>% addProviderTiles("Esri.NatGeoWorldMap") %>%addTiles() %>% 
+    addMarkers(lng = ~Longitude, lat = ~Latitude,clusterOptions = markerClusterOptions()) %>%
+    # controls
+    setView(lng=center_lon, lat=center_lat,zoom = 12)
+```
+
+
+```{r countmap}
+library(ggmap)
+```
+
+
+```{r london}
+ggplot(data = NYC311SampleAll, mapping = aes(x = NYC311SampleAll$Longitude, y = NYC311SampleAll$Latitude)) +
+  geom_point()
+```
+
+
+
+
+```{r }
+library(tigris)
+library(dplyr)
+library(leaflet)
+library(sp)
+library(ggmap)
+library(maptools)
+library(broom)
+library(httr)
+library(rgdal)
+
+
+r <- GET('http://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/nybb/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=geojson')
+nyc_neighborhoods <- readOGR(content(r,'text'), 'OGRGeoJSON', verbose = F)
+```
+
+
+https://rpubs.com/jhofman/nycmaps
+
+
+```{r countmap}
+map1 <- ggplot() + 
+  geom_polygon(data=nyc_neighborhoods_df, aes(x=long, y=lat, group=group,fill = 'white', colour = 'black'))
+map1
+```
+
+
+
+
+```{r countmap}
+map1 + geom_point(data = NYC311SampleAll, aes(x = NYC311SampleAll$Longitude, y = NYC311SampleAll$Latitude, colour = NYC311SampleAll$Borough)) + scale_colour_manual(values = rainbow(14)) + labs(x = 'Longitude', y = 'Latitude', title = 'Map of Greater London with the borough boundaries')
+```
+
+
+find most complaints borough
+```{r complainttypes}
+
+NYC311SampleAll = NYC311SampleAll[- grep("Unspecified", NYC311SampleAll$Borough),]
+NYC311SampleAll %>% group_by(Borough, `Complaint Type`) %>%
+  filter(!is.na(Borough)) %>%
+  
+  summarize(num_call = n()) %>%
+  ungroup() %>%
+  arrange(desc(num_call)) %>%
+  head(20) %>%
+  ggplot(aes(y=num_call, x=Borough, fill = `Complaint Type`, color = `Complaint Type`))  +
+  geom_histogram(stat="identity",position = 'dodge') + ggtitle("Count of Top Most complaints from Top Most agencies") + xlab("Top 6 Agencies") + ylab("Number of Complaints Type")+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+
+```{r}
+NYC_311_NYPD <- (data.frame(NYC311SampleAll[NYC311SampleAll$Agency == "NYPD"]))
+
+```
+
+
+```{r}
+colnames(NYC_311_NYPD)
+
+```
+
+
+
+# Complaints from NCC311 data going to NYPD . Brooklyn wins. Blocked driveway is most.. Small complaints in the 311. Theft more in manhattan according to joined data
+```{r}
+
+NYC_311_NYPD <-NYC_311_NYPD[!(is.na(NYC_311_NYPD$Complaint.Type) | NYC_311_NYPD$Complaint.Type==""), ]
+exp_dt <- NYC_311_NYPD%>%
+  group_by(Complaint.Type) %>%
+  filter(!is.na(Complaint.Type)) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  mutate(Complaint.Type = reorder(Complaint.Type,Count)) %>%
+  arrange(desc(Count)) %>%
+  head(6)
+
+NYCFiltered <- filter(NYC_311_NYPD, NYC_311_NYPD$Complaint.Type %in% exp_dt$Complaint.Type)
+
+
+
+
+
+NYCFiltered%>%
+  group_by(Borough, Complaint.Type) %>%
+  filter(!is.na(Complaint.Type)) %>%
+  summarise(num_call = n()) %>%
+  ungroup() %>%
+  arrange(desc(num_call))  %>%
+
+   ggplot(aes(y=num_call, x=Complaint.Type, fill = `Complaint.Type`, color = Borough))  +
+  geom_histogram(stat="identity",position = 'dodge') + ggtitle("Count of Top Most complaints from Top Most agencies") + xlab("Top 6 Agencies") + ylab("Number of Complaints Type")+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+Complaints from joined data. Manhattan wins
+```{r}
+
+join_nyc_crimes%>%
+  group_by(Borough) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  arrange(desc(Count))  %>%
+
+  ggplot(aes(x = Borough,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = fillColor) +
+  geom_text(aes(x = Borough, y = Count, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Complaint type',
+       y = 'Count',
+       title = 'Top 10 Complaint type') +
+  coord_flip() +
+  theme_bw()
+
+
+```
+
+
+
+```{r}
+
+NYC311SampleAll%>%
+  group_by(Borough) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  arrange(desc(Count))  %>%
+
+  ggplot(aes(x = Borough,y = Count)) +
+  geom_bar(stat='identity',colour="white", fill = fillColor) +
+  geom_text(aes(x = Borough, y = Count, label = paste0("(",Count,")",sep="")),
+            hjust=0, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  labs(x = 'Complaint type',
+       y = 'Count',
+       title = 'Top 10 Complaint type') +
+  coord_flip() +
+  theme_bw()
+
+
+```
+
+
+# FInding the borough with highest complaints to NYPD from data set 1. 
+
+```{r}
+
+
+join_nyc_crimes <-join_nyc_crimes[!(is.na(join_nyc_crimes$OFNS_DESC) | join_nyc_crimes$OFNS_DESC==""), ]
+exp_dt <- join_nyc_crimes%>%
+  group_by(OFNS_DESC) %>%
+  filter(!is.na(OFNS_DESC)) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  mutate(OFNS_DESC = reorder(OFNS_DESC,Count)) %>%
+  arrange(desc(Count)) %>%
+  head(6)
+
+NYCFiltered <- filter(join_nyc_crimes, join_nyc_crimes$OFNS_DESC %in% exp_dt$OFNS_DESC)
+
+
+exp_dt <- NYCFiltered%>%
+  group_by(Borough) %>%
+  filter(!is.na(Borough)) %>%
+  summarise(Count = n()) %>%
+  ungroup() %>%
+  mutate(Borough = reorder(Borough,Count)) %>%
+  arrange(desc(Count)) %>%
+  head(3)
+
+NYCFiltered2 <- filter(NYCFiltered, NYCFiltered$Borough %in% exp_dt$Borough)
+
+
+
+NYCFiltered2%>%
+  group_by(Borough, OFNS_DESC) %>%
+  filter(!is.na(OFNS_DESC)) %>%
+  summarise(num_call = n()) %>%
+  ungroup() %>%
+  arrange(desc(num_call))  %>%
+
+   ggplot(aes(y=num_call, x=OFNS_DESC, fill = `OFNS_DESC`, color = Borough))  +
+  geom_histogram(stat="identity",position = 'dodge') + ggtitle("Count of Top Most complaints from Top Most agencies") + xlab("Top 6 Agencies") + ylab("Number of Complaints Type")+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
